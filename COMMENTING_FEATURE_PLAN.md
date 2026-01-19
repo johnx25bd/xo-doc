@@ -170,14 +170,24 @@ DELETE /api/private/comments/:id                      # Delete comment (author/e
 
 ### Permission Model
 
+**Principle: Comment permissions mirror document permissions.**
+
+If a note is set to "free" (anyone can view/edit), anyone can comment. This keeps the mental model simple and consistent.
+
 | Action | Required Permission |
 |--------|---------------------|
 | View comments | `READ` on note |
-| Create thread/comment | `READ` on note (configurable) |
+| Create thread/comment | `READ` on note (mirrors doc access) |
 | Edit own comment | Comment author OR `WRITE` on note |
 | Delete own comment | Comment author OR `WRITE` on note |
 | Delete others' comments | `WRITE` on note |
-| Resolve/unresolve thread | `WRITE` on note |
+| Resolve/unresolve thread | `READ` on note + logged in (guests cannot resolve) |
+| Re-open resolved thread | `READ` on note + logged in |
+
+**Guest behavior:**
+- Guests can create comments/replies (prompted for display name)
+- Guests can edit/delete their own comments (tracked via session UUID)
+- Guests **cannot** resolve threads (must be logged in)
 
 ### Service Implementation Pattern
 
@@ -628,7 +638,7 @@ When a user with an open comment sidebar sees document changes:
 - [ ] Backend `CommentsService` with CRUD operations
 - [ ] Backend `CommentsController` with REST endpoints
 - [ ] DTOs and Zod schemas in `@hedgedoc/commons`
-- [ ] Basic permission checks (READ to comment)
+- [ ] Permission checks mirroring document access level
 
 ### Phase 2: Frontend Basics
 - [ ] Redux slice for comments state
@@ -650,34 +660,58 @@ When a user with an open comment sidebar sees document changes:
 - [ ] Frontend WebSocket handler for comment updates
 - [ ] Real-time thread/comment additions
 
-### Phase 5: Polish
-- [ ] Thread resolution (mark resolved/unresolve)
+### Phase 5: Polish & Export
+- [ ] Thread resolution (logged-in users only)
 - [ ] Edit/delete comments
 - [ ] Orphaned comment handling (anchor text not found)
 - [ ] Comment count badge in UI
 - [ ] Keyboard shortcuts
 - [ ] Mobile-responsive sidebar
+- [ ] Export with comments as footnotes option
+- [ ] Export dialog checkbox for including comments
 
 ---
 
-## Open Questions
+## Design Decisions
 
-1. **Should comments require any permission, or just viewing the note?**
-   - HackMD allows anyone with read access to comment
-   - Could be configurable per-note or instance-wide
+### 1. Comment Permissions Mirror Document Permissions
+Comment access follows the same permission model as the document itself. If a doc is "free" (publicly accessible), anyone can comment. This avoids a separate permission system and keeps the UX intuitive.
 
-2. **How to handle exports?**
-   - Option A: Ignore comments in markdown export
-   - Option B: Append comments as footnotes
-   - Option C: Separate JSON sidecar file
+### 2. Export with Optional Footnotes
+When exporting markdown, users can choose to include comments as footnotes:
 
-3. **Should comments sync via Yjs or REST+WebSocket?**
-   - Yjs: More complex, but leverages existing infrastructure
-   - REST+WS: Simpler, comments are separate from document
+```markdown
+# Original document content
 
-4. **Thread resolution workflow?**
-   - Who can resolve? Author of first comment? Anyone with write access?
-   - Can resolved threads be re-opened?
+Here is some text that was commented on[^comment-1].
+
+---
+
+## Comments
+
+[^comment-1]: **Thread on "some text that was commented on"**
+  - **Alice** (2024-01-15): I think this needs clarification
+  - **Bob** (2024-01-15): Good point, I'll revise
+  - *(Resolved by Alice)*
+```
+
+**Implementation:**
+- Add checkbox to export dialog: "Include comments as footnotes"
+- Backend export endpoint accepts `?includeComments=true` parameter
+- Comments rendered as footnote references at anchor locations
+- Full thread content appended at document end
+
+### 3. Thread Resolution Workflow
+- Any **logged-in user** with READ access can resolve/unresolve threads
+- Guests cannot resolve (prevents anonymous spam-resolution)
+- Resolved threads can be re-opened by any logged-in user
+- Resolved threads are collapsed by default in the sidebar
+
+### 4. Real-time Sync via REST + WebSocket
+Comments sync separately from document content:
+- **REST API** for CRUD operations
+- **WebSocket broadcasts** for real-time updates to other viewers
+- Simpler than Yjs integration, keeps comment data cleanly separated
 
 ---
 
