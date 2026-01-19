@@ -8,6 +8,7 @@ import { Module } from '@nestjs/common';
 import { AliasModule } from '../../alias/alias.module';
 import { ApiTokenModule } from '../../api-token/api-token.module';
 import { AuthModule } from '../../auth/auth.module';
+import { CommentsModule } from '../../comments/comments.module';
 import { ExploreModule } from '../../explore/explore.module';
 import { FrontendConfigModule } from '../../frontend-config/frontend-config.module';
 import { GroupsModule } from '../../groups/groups.module';
@@ -23,6 +24,7 @@ import { GuestController } from './auth/guest/guest.controller';
 import { LdapController } from './auth/ldap/ldap.controller';
 import { LocalController } from './auth/local/local.controller';
 import { OidcController } from './auth/oidc/oidc.controller';
+import { CommentsController } from './comments/comments.controller';
 import { ConfigController } from './config/config.controller';
 import { ExploreController } from './explore/explore.controller';
 import { GroupsController } from './groups/groups.controller';
@@ -44,6 +46,7 @@ import { UsersController } from './users/users.controller';
     AuthModule,
     GroupsModule,
     NoteModule,
+    CommentsModule,
   ],
   controllers: [
     ApiTokensController,
@@ -60,6 +63,7 @@ import { UsersController } from './users/users.controller';
     LdapController,
     LocalController,
     OidcController,
+    CommentsController,
   ],
 })
 export class PrivateApiModule {}

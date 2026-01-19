@@ -20,6 +20,35 @@ export enum MessageType {
 
   READY_REQUEST = 'READY_REQUEST',
   READY_ANSWER = 'READY_ANSWER',
+
+  /** Comment system real-time updates */
+  COMMENT_UPDATE = 'COMMENT_UPDATE',
+}
+
+/**
+ * Types of comment updates that can be broadcast.
+ */
+export enum CommentUpdateType {
+  THREAD_CREATED = 'thread_created',
+  COMMENT_ADDED = 'comment_added',
+  COMMENT_UPDATED = 'comment_updated',
+  COMMENT_DELETED = 'comment_deleted',
+  THREAD_RESOLVED = 'thread_resolved',
+  THREAD_DELETED = 'thread_deleted',
+}
+
+/**
+ * Payload for comment update messages.
+ */
+export interface CommentUpdatePayload {
+  /** The type of update */
+  updateType: CommentUpdateType
+  /** ID of the affected thread */
+  threadId: number
+  /** ID of the affected comment (for comment-level updates) */
+  commentId?: number
+  /** Whether thread is now resolved (for THREAD_RESOLVED) */
+  resolved?: boolean
 }
 
 export enum ConnectionStateEvent {
@@ -43,6 +72,9 @@ export interface MessagePayloads {
   [MessageType.REALTIME_USER_SET_ACTIVITY]: {
     active: boolean
   }
+
+  /** Comment system real-time update payload */
+  [MessageType.COMMENT_UPDATE]: CommentUpdatePayload
 }
 
 export type Message<T extends MessageType> = T extends keyof MessagePayloads

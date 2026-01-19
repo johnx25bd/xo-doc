@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { PermissionLevel } from '@hedgedoc/commons';
+import { CommentUpdateType, PermissionLevel } from '@hedgedoc/commons';
 import { FieldNameRevision } from '@hedgedoc/database';
 import { Optional } from '@mrdrogdrog/optional';
 import { BeforeApplicationShutdown, Inject, Injectable } from '@nestjs/common';
@@ -11,7 +11,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import noteConfiguration, { NoteConfig } from '../../config/note.config';
-import { NoteEvent } from '../../events';
+import { CommentEventPayload, NoteEvent } from '../../events';
 import { ConsoleLoggerService } from '../../logger/console-logger.service';
 import { PermissionService } from '../../permissions/permission.service';
 import { RevisionsService } from '../../revisions/revisions.service';
@@ -184,6 +184,109 @@ export class RealtimeNoteService implements BeforeApplicationShutdown {
     const realtimeNote = this.realtimeNoteStore.find(noteId);
     if (realtimeNote) {
       realtimeNote.destroy();
+    }
+  }
+
+  // ===== Comment Event Handlers =====
+
+  /**
+   * Broadcasts a new comment thread creation to all connected clients.
+   *
+   * @param payload The event payload containing noteId and threadId
+   */
+  @OnEvent(NoteEvent.COMMENT_THREAD_CREATED)
+  public handleCommentThreadCreated(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.THREAD_CREATED,
+        payload.threadId,
+      );
+    }
+  }
+
+  /**
+   * Broadcasts a new comment addition to all connected clients.
+   *
+   * @param payload The event payload containing noteId, threadId, and commentId
+   */
+  @OnEvent(NoteEvent.COMMENT_ADDED)
+  public handleCommentAdded(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.COMMENT_ADDED,
+        payload.threadId,
+        payload.commentId,
+      );
+    }
+  }
+
+  /**
+   * Broadcasts a comment update to all connected clients.
+   *
+   * @param payload The event payload containing noteId, threadId, and commentId
+   */
+  @OnEvent(NoteEvent.COMMENT_UPDATED)
+  public handleCommentUpdated(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.COMMENT_UPDATED,
+        payload.threadId,
+        payload.commentId,
+      );
+    }
+  }
+
+  /**
+   * Broadcasts a comment deletion to all connected clients.
+   *
+   * @param payload The event payload containing noteId, threadId, and commentId
+   */
+  @OnEvent(NoteEvent.COMMENT_DELETED)
+  public handleCommentDeleted(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.COMMENT_DELETED,
+        payload.threadId,
+        payload.commentId,
+      );
+    }
+  }
+
+  /**
+   * Broadcasts a thread resolution status change to all connected clients.
+   *
+   * @param payload The event payload containing noteId, threadId, and resolved status
+   */
+  @OnEvent(NoteEvent.COMMENT_THREAD_RESOLVED)
+  public handleCommentThreadResolved(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.THREAD_RESOLVED,
+        payload.threadId,
+        undefined,
+        payload.resolved,
+      );
+    }
+  }
+
+  /**
+   * Broadcasts a thread deletion to all connected clients.
+   *
+   * @param payload The event payload containing noteId and threadId
+   */
+  @OnEvent(NoteEvent.COMMENT_THREAD_DELETED)
+  public handleCommentThreadDeleted(payload: CommentEventPayload): void {
+    const realtimeNote = this.realtimeNoteStore.find(payload.noteId);
+    if (realtimeNote) {
+      realtimeNote.broadcastCommentUpdate(
+        CommentUpdateType.THREAD_DELETED,
+        payload.threadId,
+      );
     }
   }
 }

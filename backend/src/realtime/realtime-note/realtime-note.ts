@@ -3,7 +3,13 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { Message, MessageType, RealtimeDoc } from '@hedgedoc/commons';
+import {
+  CommentUpdatePayload,
+  CommentUpdateType,
+  Message,
+  MessageType,
+  RealtimeDoc,
+} from '@hedgedoc/commons';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2, EventMap, Listener } from 'eventemitter2';
 
@@ -164,6 +170,37 @@ export class RealtimeNote extends EventEmitter2<RealtimeNoteEventMap> {
    */
   public announceNoteDeletion(): void {
     this.sendToAllClients({ type: MessageType.DOCUMENT_DELETED });
+  }
+
+  /**
+   * Broadcasts a comment update to all connected clients.
+   *
+   * Used for real-time synchronization of comment threads and comments.
+   *
+   * @param updateType The type of comment update
+   * @param threadId The ID of the affected thread
+   * @param commentId The ID of the affected comment (for comment-level updates)
+   * @param resolved Whether the thread is now resolved (for THREAD_RESOLVED)
+   */
+  public broadcastCommentUpdate(
+    updateType: CommentUpdateType,
+    threadId: number,
+    commentId?: number,
+    resolved?: boolean,
+  ): void {
+    const payload: CommentUpdatePayload = {
+      updateType,
+      threadId,
+      commentId,
+      resolved,
+    };
+    this.sendToAllClients({
+      type: MessageType.COMMENT_UPDATE,
+      payload,
+    });
+    this.logger.debug(
+      `Broadcast comment update: ${updateType} for thread ${threadId}`,
+    );
   }
 
   /**
