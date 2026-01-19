@@ -47,6 +47,31 @@ export const CreateCommentThreadSchema = z
       .optional()
       .describe('Display name for guest users. Required if not logged in.'),
   })
+  .refine(
+    (data) => {
+      // Both anchorStart and anchorEnd must be either both null or both defined
+      const bothNull = data.anchorStart === null && data.anchorEnd === null
+      const bothDefined = data.anchorStart !== null && data.anchorEnd !== null
+      return bothNull || bothDefined
+    },
+    {
+      message: 'anchorStart and anchorEnd must both be null or both be defined',
+      path: ['anchorStart'],
+    },
+  )
+  .refine(
+    (data) => {
+      // If both are defined, anchorStart must be <= anchorEnd
+      if (data.anchorStart !== null && data.anchorEnd !== null) {
+        return data.anchorStart <= data.anchorEnd
+      }
+      return true
+    },
+    {
+      message: 'anchorStart must be less than or equal to anchorEnd',
+      path: ['anchorStart'],
+    },
+  )
   .describe('DTO for creating a new comment thread with an initial comment')
 
 export type CreateCommentThreadInterface = z.infer<typeof CreateCommentThreadSchema>

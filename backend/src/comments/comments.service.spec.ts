@@ -11,7 +11,7 @@ import {
   TableCommentThread,
   TableUser,
 } from '@hedgedoc/database';
-import { Provider } from '@nestjs/common';
+import { BadRequestException, Provider } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitter2 } from 'eventemitter2';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -577,6 +577,230 @@ describe('CommentsService', () => {
       const result = await service.getNoteIdForComment(commentId);
 
       expect(result).toBe(noteId);
+    });
+  });
+
+  describe('input validation', () => {
+    describe('createThread validation', () => {
+      it('throws BadRequestException for empty content', async () => {
+        await expect(
+          service.createThread(noteId, userId, null, 'highlighted', 0, 11, ''),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('throws BadRequestException for whitespace-only content', async () => {
+        await expect(
+          service.createThread(noteId, userId, null, 'highlighted', 0, 11, '   '),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('throws BadRequestException for content exceeding max length', async () => {
+        const longContent = 'a'.repeat(10001);
+        await expect(
+          service.createThread(noteId, userId, null, 'highlighted', 0, 11, longContent),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('accepts content at max length', async () => {
+        const maxLengthContent = 'a'.repeat(10000);
+        const mockCreatedThread = {
+          [FieldNameCommentThread.id]: threadId,
+          [FieldNameCommentThread.noteId]: noteId,
+          [FieldNameCommentThread.anchorText]: 'highlighted',
+          [FieldNameCommentThread.anchorStart]: 0,
+          [FieldNameCommentThread.anchorEnd]: 11,
+          [FieldNameCommentThread.resolved]: false,
+          [FieldNameCommentThread.resolvedBy]: null,
+          [FieldNameCommentThread.resolvedAt]: null,
+          [FieldNameCommentThread.createdAt]: '2025-01-01 00:00:00',
+          [FieldNameCommentThread.updatedAt]: '2025-01-01 00:00:00',
+        };
+
+        const mockCreatedComment = {
+          [FieldNameComment.id]: commentId,
+          [FieldNameComment.threadId]: threadId,
+          [FieldNameComment.authorId]: userId,
+          [FieldNameComment.guestName]: null,
+          [FieldNameComment.guestSession]: null,
+          [FieldNameComment.content]: maxLengthContent,
+          [FieldNameComment.createdAt]: '2025-01-01 00:00:00',
+          [FieldNameComment.updatedAt]: '2025-01-01 00:00:00',
+        };
+
+        const mockUser = {
+          [FieldNameUser.username]: 'testuser',
+          [FieldNameUser.displayName]: 'Test User',
+        };
+
+        tracker.on.insert(TableCommentThread).response([mockCreatedThread]);
+        tracker.on.insert(TableComment).response([mockCreatedComment]);
+        tracker.on.select(TableUser).response(mockUser);
+
+        const result = await service.createThread(
+          noteId,
+          userId,
+          null,
+          'highlighted',
+          0,
+          11,
+          maxLengthContent,
+        );
+
+        expect(result.comments[0].content).toBe(maxLengthContent);
+      });
+
+      it('creates thread with null anchors for note-level comments', async () => {
+        const mockCreatedThread = {
+          [FieldNameCommentThread.id]: threadId,
+          [FieldNameCommentThread.noteId]: noteId,
+          [FieldNameCommentThread.anchorText]: 'note-level comment',
+          [FieldNameCommentThread.anchorStart]: null,
+          [FieldNameCommentThread.anchorEnd]: null,
+          [FieldNameCommentThread.resolved]: false,
+          [FieldNameCommentThread.resolvedBy]: null,
+          [FieldNameCommentThread.resolvedAt]: null,
+          [FieldNameCommentThread.createdAt]: '2025-01-01 00:00:00',
+          [FieldNameCommentThread.updatedAt]: '2025-01-01 00:00:00',
+        };
+
+        const mockCreatedComment = {
+          [FieldNameComment.id]: commentId,
+          [FieldNameComment.threadId]: threadId,
+          [FieldNameComment.authorId]: userId,
+          [FieldNameComment.guestName]: null,
+          [FieldNameComment.guestSession]: null,
+          [FieldNameComment.content]: 'A note-level comment',
+          [FieldNameComment.createdAt]: '2025-01-01 00:00:00',
+          [FieldNameComment.updatedAt]: '2025-01-01 00:00:00',
+        };
+
+        const mockUser = {
+          [FieldNameUser.username]: 'testuser',
+          [FieldNameUser.displayName]: 'Test User',
+        };
+
+        tracker.on.insert(TableCommentThread).response([mockCreatedThread]);
+        tracker.on.insert(TableComment).response([mockCreatedComment]);
+        tracker.on.select(TableUser).response(mockUser);
+
+        const result = await service.createThread(
+          noteId,
+          userId,
+          null,
+          'note-level comment',
+          null,
+          null,
+          'A note-level comment',
+        );
+
+        expect(result.anchorStart).toBeNull();
+        expect(result.anchorEnd).toBeNull();
+      });
+    });
+
+    describe('addComment validation', () => {
+      it('throws BadRequestException for empty content', async () => {
+        await expect(
+          service.addComment(threadId, userId, null, ''),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('throws BadRequestException for whitespace-only content', async () => {
+        await expect(
+          service.addComment(threadId, userId, null, '  \n\t  '),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+
+    describe('updateComment validation', () => {
+      it('throws BadRequestException for empty content', async () => {
+        await expect(
+          service.updateComment(commentId, ''),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('throws BadRequestException for whitespace-only content', async () => {
+        await expect(
+          service.updateComment(commentId, '   '),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
+  });
+
+  describe('guest display name handling', () => {
+    it('uses provided guest name for display', async () => {
+      const mockCreatedThread = {
+        [FieldNameCommentThread.id]: threadId,
+        [FieldNameCommentThread.noteId]: noteId,
+        [FieldNameCommentThread.anchorText]: 'text',
+        [FieldNameCommentThread.anchorStart]: 0,
+        [FieldNameCommentThread.anchorEnd]: 4,
+        [FieldNameCommentThread.resolved]: false,
+        [FieldNameCommentThread.resolvedBy]: null,
+        [FieldNameCommentThread.resolvedAt]: null,
+        [FieldNameCommentThread.createdAt]: '2025-01-01 00:00:00',
+        [FieldNameCommentThread.updatedAt]: '2025-01-01 00:00:00',
+      };
+
+      const mockCreatedComment = {
+        [FieldNameComment.id]: commentId,
+        [FieldNameComment.threadId]: threadId,
+        [FieldNameComment.authorId]: null,
+        [FieldNameComment.guestName]: 'Custom Guest Name',
+        [FieldNameComment.guestSession]: guestSession,
+        [FieldNameComment.content]: 'Guest comment',
+        [FieldNameComment.createdAt]: '2025-01-01 00:00:00',
+        [FieldNameComment.updatedAt]: '2025-01-01 00:00:00',
+      };
+
+      tracker.on.insert(TableCommentThread).response([mockCreatedThread]);
+      tracker.on.insert(TableComment).response([mockCreatedComment]);
+
+      const result = await service.createThread(
+        noteId,
+        null,
+        { name: 'Custom Guest Name', session: guestSession },
+        'text',
+        0,
+        4,
+        'Guest comment',
+      );
+
+      expect(result.comments[0].authorDisplayName).toBe('Custom Guest Name');
+      expect(result.comments[0].isGuest).toBe(true);
+    });
+
+    it('falls back to "Guest" when no guest name provided', async () => {
+      const mockThread = {
+        [FieldNameCommentThread.id]: threadId,
+        [FieldNameCommentThread.noteId]: noteId,
+        [FieldNameCommentThread.anchorText]: 'text',
+        [FieldNameCommentThread.anchorStart]: 0,
+        [FieldNameCommentThread.anchorEnd]: 4,
+        [FieldNameCommentThread.resolved]: false,
+        [FieldNameCommentThread.resolvedBy]: null,
+        [FieldNameCommentThread.resolvedAt]: null,
+        [FieldNameCommentThread.createdAt]: '2025-01-01 00:00:00',
+        [FieldNameCommentThread.updatedAt]: '2025-01-01 00:00:00',
+      };
+
+      const mockComment = {
+        [FieldNameComment.id]: commentId,
+        [FieldNameComment.threadId]: threadId,
+        [FieldNameComment.authorId]: null,
+        [FieldNameComment.guestName]: null,
+        [FieldNameComment.guestSession]: guestSession,
+        [FieldNameComment.content]: 'Anonymous guest comment',
+        [FieldNameComment.createdAt]: '2025-01-01 00:00:00',
+        [FieldNameComment.updatedAt]: '2025-01-01 00:00:00',
+      };
+
+      tracker.on.select(TableCommentThread).response([mockThread]);
+      tracker.on.select(TableComment).response([mockComment]);
+
+      const result = await service.getThreadsForNote(noteId);
+
+      expect(result[0].comments[0].authorDisplayName).toBe('Guest');
     });
   });
 });

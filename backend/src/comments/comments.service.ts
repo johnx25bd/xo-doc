@@ -32,6 +32,16 @@ import {
   dateTimeToISOString,
   dbToDateTime,
 } from '../utils/datetime.js';
+import { BadRequestException } from '@nestjs/common';
+
+/** Default display name for guest users when no name is provided */
+const GUEST_DEFAULT_NAME = 'Guest';
+
+/** Default display name when a registered user's display name is missing */
+const USER_DISPLAY_NAME_FALLBACK = 'Unknown';
+
+/** Maximum allowed length for comment content */
+const MAX_COMMENT_LENGTH = 10000;
 
 /**
  * Guest information for creating comments without authentication.
@@ -238,6 +248,9 @@ export class CommentsService {
     anchorEnd: number | null,
     initialComment: string,
   ): Promise<CommentThreadInterface> {
+    // Validate input
+    this.validateCommentContent(initialComment);
+
     return await this.knex.transaction(async (trx) => {
       const now = dateTimeToDB(getCurrentDateTime());
 
@@ -272,19 +285,8 @@ export class CommentsService {
         .returning('*');
 
       // Get author info for the DTO
-      let authorUsername: string | null = null;
-      let authorDisplayName: string;
-
-      if (authorId !== null) {
-        const author = await trx(TableUser)
-          .select(FieldNameUser.username, FieldNameUser.displayName)
-          .where(FieldNameUser.id, authorId)
-          .first();
-        authorUsername = author?.[FieldNameUser.username] || null;
-        authorDisplayName = author?.[FieldNameUser.displayName] || 'Unknown';
-      } else {
-        authorDisplayName = guestInfo?.name || 'Guest';
-      }
+      const { username: authorUsername, displayName: authorDisplayName } =
+        await this.getUserDisplayInfo(trx, authorId, guestInfo?.name ?? null);
 
       this.logger.debug(
         `Created comment thread ${threadId} on note ${noteId}`,
@@ -332,6 +334,9 @@ export class CommentsService {
     guestInfo: GuestInfo | null,
     content: string,
   ): Promise<CommentInterface> {
+    // Validate input
+    this.validateCommentContent(content);
+
     return await this.knex.transaction(async (trx) => {
       // Verify thread exists and get noteId
       const thread = await trx(TableCommentThread)
@@ -368,19 +373,8 @@ export class CommentsService {
         .update({ [FieldNameCommentThread.updatedAt]: now });
 
       // Get author info for the DTO
-      let authorUsername: string | null = null;
-      let authorDisplayName: string;
-
-      if (authorId !== null) {
-        const author = await trx(TableUser)
-          .select(FieldNameUser.username, FieldNameUser.displayName)
-          .where(FieldNameUser.id, authorId)
-          .first();
-        authorUsername = author?.[FieldNameUser.username] || null;
-        authorDisplayName = author?.[FieldNameUser.displayName] || 'Unknown';
-      } else {
-        authorDisplayName = guestInfo?.name || 'Guest';
-      }
+      const { username: authorUsername, displayName: authorDisplayName } =
+        await this.getUserDisplayInfo(trx, authorId, guestInfo?.name ?? null);
 
       const commentId = createdComment[FieldNameComment.id];
 
@@ -425,6 +419,9 @@ export class CommentsService {
     commentId: number,
     content: string,
   ): Promise<CommentInterface> {
+    // Validate input
+    this.validateCommentContent(content);
+
     return await this.knex.transaction(async (trx) => {
       const now = dateTimeToDB(getCurrentDateTime());
 
@@ -457,31 +454,32 @@ export class CommentsService {
         .where(FieldNameCommentThread.id, updatedComment[FieldNameComment.threadId])
         .first();
 
+      if (!thread) {
+        throw new NotInDBError(
+          `Thread for comment ${commentId} not found`,
+          this.logger.getContext(),
+          'updateComment',
+        );
+      }
+
       // Update thread's updatedAt
       await trx(TableCommentThread)
         .where(FieldNameCommentThread.id, updatedComment[FieldNameComment.threadId])
         .update({ [FieldNameCommentThread.updatedAt]: now });
 
       // Get author info for the DTO
-      let authorUsername: string | null = null;
-      let authorDisplayName: string;
-
-      if (updatedComment[FieldNameComment.authorId] !== null) {
-        const author = await trx(TableUser)
-          .select(FieldNameUser.username, FieldNameUser.displayName)
-          .where(FieldNameUser.id, updatedComment[FieldNameComment.authorId])
-          .first();
-        authorUsername = author?.[FieldNameUser.username] || null;
-        authorDisplayName = author?.[FieldNameUser.displayName] || 'Unknown';
-      } else {
-        authorDisplayName = updatedComment[FieldNameComment.guestName] || 'Guest';
-      }
+      const { username: authorUsername, displayName: authorDisplayName } =
+        await this.getUserDisplayInfo(
+          trx,
+          updatedComment[FieldNameComment.authorId],
+          updatedComment[FieldNameComment.guestName],
+        );
 
       this.logger.debug(`Updated comment ${commentId}`, 'updateComment');
 
       // Emit event for real-time sync
       this.eventEmitter.emit(NoteEvent.COMMENT_UPDATED, {
-        noteId: thread![FieldNameCommentThread.noteId],
+        noteId: thread[FieldNameCommentThread.noteId],
         threadId: updatedComment[FieldNameComment.threadId],
         commentId,
       } as CommentEventPayload);
@@ -533,6 +531,14 @@ export class CommentsService {
         .where(FieldNameCommentThread.id, threadId)
         .first();
 
+      if (!thread) {
+        throw new NotInDBError(
+          `Thread for comment ${commentId} not found`,
+          this.logger.getContext(),
+          'deleteComment',
+        );
+      }
+
       // Delete the comment
       await trx(TableComment).where(FieldNameComment.id, commentId).delete();
 
@@ -546,7 +552,7 @@ export class CommentsService {
 
       // Emit event for real-time sync
       this.eventEmitter.emit(NoteEvent.COMMENT_DELETED, {
-        noteId: thread![FieldNameCommentThread.noteId],
+        noteId: thread[FieldNameCommentThread.noteId],
         threadId,
         commentId,
       } as CommentEventPayload);
@@ -801,6 +807,54 @@ export class CommentsService {
   }
 
   /**
+   * Validate comment content before inserting or updating.
+   *
+   * @throws BadRequestException if content is invalid
+   */
+  private validateCommentContent(content: string): void {
+    if (!content || !content.trim()) {
+      throw new BadRequestException('Comment content cannot be empty');
+    }
+    if (content.length > MAX_COMMENT_LENGTH) {
+      throw new BadRequestException(
+        `Comment exceeds maximum length of ${MAX_COMMENT_LENGTH} characters`,
+      );
+    }
+  }
+
+  /**
+   * Fetch user display info (username and displayName) for a given user ID.
+   * Returns guest defaults if authorId is null.
+   *
+   * @param trx - Knex transaction
+   * @param authorId - User ID or null for guests
+   * @param guestName - Guest name if authorId is null
+   * @returns Object with username (null for guests) and displayName
+   */
+  private async getUserDisplayInfo(
+    trx: Knex,
+    authorId: number | null,
+    guestName: string | null,
+  ): Promise<{ username: string | null; displayName: string }> {
+    if (authorId === null) {
+      return {
+        username: null,
+        displayName: guestName || GUEST_DEFAULT_NAME,
+      };
+    }
+
+    const user = await trx(TableUser)
+      .select(FieldNameUser.username, FieldNameUser.displayName)
+      .where(FieldNameUser.id, authorId)
+      .first();
+
+    return {
+      username: user?.[FieldNameUser.username] ?? null,
+      displayName: user?.[FieldNameUser.displayName] ?? USER_DISPLAY_NAME_FALLBACK,
+    };
+  }
+
+  /**
    * Convert a database comment row to a DTO.
    */
   private commentToDto(
@@ -815,8 +869,8 @@ export class CommentsService {
       threadId: row[FieldNameComment.threadId],
       authorUsername: isGuest ? null : (row[FieldNameUser.username] ?? null),
       authorDisplayName: isGuest
-        ? (row[FieldNameComment.guestName] ?? 'Guest')
-        : (row[FieldNameUser.displayName] ?? 'Unknown'),
+        ? (row[FieldNameComment.guestName] ?? GUEST_DEFAULT_NAME)
+        : (row[FieldNameUser.displayName] ?? USER_DISPLAY_NAME_FALLBACK),
       isGuest,
       content: row[FieldNameComment.content],
       createdAt: dateTimeToISOString(
