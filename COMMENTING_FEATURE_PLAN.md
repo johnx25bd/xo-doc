@@ -181,13 +181,13 @@ If a note is set to "free" (anyone can view/edit), anyone can comment. This keep
 | Edit own comment | Comment author OR `WRITE` on note |
 | Delete own comment | Comment author OR `WRITE` on note |
 | Delete others' comments | `WRITE` on note |
-| Resolve/unresolve thread | `READ` on note + logged in (guests cannot resolve) |
-| Re-open resolved thread | `READ` on note + logged in |
+| Resolve/unresolve **own** thread | Thread author (logged in) |
+| Resolve/unresolve **any** thread | `WRITE` on note |
 
 **Guest behavior:**
 - Guests can create comments/replies (prompted for display name)
 - Guests can edit/delete their own comments (tracked via session UUID)
-- Guests **cannot** resolve threads (must be logged in)
+- Guests **cannot** resolve threads (must be logged in to resolve, even own threads)
 
 ### Service Implementation Pattern
 
@@ -701,10 +701,10 @@ Here is some text that was commented on[^comment-1].
 - Comments rendered as footnote references at anchor locations
 - Full thread content appended at document end
 
-### 3. Thread Resolution Workflow
-- Any **logged-in user** with READ access can resolve/unresolve threads
-- Guests cannot resolve (prevents anonymous spam-resolution)
-- Resolved threads can be re-opened by any logged-in user
+### 3. Thread Resolution Workflow (Google Docs Model)
+- **Thread authors** can resolve/unresolve their own threads (must be logged in)
+- **Users with WRITE access** can resolve/unresolve any thread
+- Guests cannot resolve threads (even their own - must log in)
 - Resolved threads are collapsed by default in the sidebar
 
 ### 4. Real-time Sync via REST + WebSocket
